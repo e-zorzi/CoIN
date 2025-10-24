@@ -39,6 +39,7 @@ from habitat.config.default_structured_configs import (
 os.environ["GLOG_minloglevel"] = "2"
 os.environ["MAGNUM_LOG"] = "quiet"
 os.environ["HABITAT_SIM_LOG"] = "quiet"
+os.environ["COIN_SCENE_DATASET_CONFIG"] = "data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json"
 
 
 class HabitatConfigPlugin(SearchPathPlugin):
@@ -60,6 +61,14 @@ def main(cfg: DictConfig) -> None:
         print("Dummy policy weights not found! Please run the following command first:")
         print("python -m vlfm.utils.generate_dummy_policy")
         exit(1)
+
+    if (
+        os.environ.get("COIN_SCENE_DATASET_CONFIG") is not None
+        and os.environ.get("COIN_SCENE_DATASET_CONFIG") != "default"
+    ):
+        assert os.path.exists(os.environ.get("COIN_SCENE_DATASET_CONFIG")), (
+            f"Scene dataset config file '{os.environ.get('COIN_SCENE_DATASET_CONFIG')}' does not exists. Fix your 'COIN_SCENE_DATASET_CONFIG' env variable or set it to 'default'"
+        )
 
     cfg = patch_config(cfg)
     with read_write(cfg):

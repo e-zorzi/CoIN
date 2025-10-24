@@ -130,6 +130,8 @@ class LanguageUncertaintyDatasetV1(PointNavDatasetV1):
 
         for episode in deserialized["episodes"]:
             episode = LanguageUncertaintyNavEpisode(**episode)
+            if os.environ.get("COIN_SCENE_DATASET_CONFIG") is not None:
+                episode.scene_dataset_config = os.environ.get("COIN_SCENE_DATASET_CONFIG")
             assert len(self.goals_by_instance[episode.goals_key]) == 1, f"More than one goal for {episode.goals_key}"
 
             episode.goals = self.goals_by_instance[episode.goals_key]
