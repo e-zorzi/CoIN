@@ -84,8 +84,8 @@ class BaseObjectNavPolicy(BasePolicy):
         test_with_groq = True
         if test_with_groq:
             llm_client_params = {
-                "model": "llama-3.3-70b-versatile",
-                "base_url": "https://api.groq.com/openai/v1",
+                "model": "qwen-3-235b-a22b-instruct-2507", #"gpt-oss-120b", # "llama-3.3-70b-versatile",
+                "base_url": "https://api.cerebras.ai/v1",
             }
         else:
             llm_client_params = {
