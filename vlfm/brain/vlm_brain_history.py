@@ -1,14 +1,16 @@
-from PIL import Image
-from colorama import Fore
-from colorama import init as init_colorama
-from LLM import VllmLLM
 from dataclasses import dataclass
 from typing import Literal
+
+from colorama import Fore
+from colorama import init as init_colorama
+from PIL import Image
+
+from vlfm.brain.LLM import VllmLLM
 from vlfm.utils.prompts import (
-    SINGLEMODEL_PROMPT_SCORE,
     SINGLEMODEL_PROMPT_CHOICES,
-    SINGLEMODEL_PROMPT_ONLY_SCORE,
     SINGLEMODEL_PROMPT_ONLY_CHOICES,
+    SINGLEMODEL_PROMPT_ONLY_SCORE,
+    SINGLEMODEL_PROMPT_SCORE,
 )
 
 init_colorama(autoreset=True)
@@ -59,8 +61,8 @@ class VLM_History:
 
 
 class VLM_client:
-    def __init__(self, client: VllmLLM, annotation_type: Literal["score", "choice"], only_annotation: bool = False):
-        self._client = client
+    def __init__(self, model_id: str, annotation_type: Literal["score", "choice"], only_annotation: bool = False):
+        self._client = VllmLLM(model_id=model_id)
         self.annotation_type = annotation_type
         self.only_annotation = only_annotation
 

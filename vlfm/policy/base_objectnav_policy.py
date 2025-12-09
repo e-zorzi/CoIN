@@ -1,28 +1,28 @@
 # Copyright (c) 2023 Boston Dynamics AI Institute LLC. All rights reserved.
-
 import os
 from dataclasses import dataclass, fields
 from typing import Any, Dict, List, Tuple, Union
+
 import cv2
 import numpy as np
 import torch
 from hydra.core.config_store import ConfigStore
 from torch import Tensor
 
+import vlfm.vlm.llava_next as LLaVA
+from vlfm.brain.llm_brain_history import LLM_History
+from vlfm.brain.vlm_brain_history import VLM_client, VLM_History
 from vlfm.mapping.object_point_cloud_map import ObjectPointCloudMap
 from vlfm.mapping.obstacle_map import ObstacleMap
 from vlfm.obs_transformers.utils import image_resize
+from vlfm.oracle.oracle import VLMOracle
 from vlfm.policy.utils.pointnav_policy import WrappedPointNavResNetPolicy
 from vlfm.utils.geometry_utils import get_fov, rho_theta
 from vlfm.vlm.coco_classes import COCO_CLASSES
 from vlfm.vlm.grounding_dino import GroundingDINOClient, ObjectDetections
+from vlfm.vlm.openai_llm import OpenAILLMClient
 from vlfm.vlm.sam import MobileSAMClient
 from vlfm.vlm.yolov7 import YOLOv7Client
-import vlfm.vlm.llava_next as LLaVA
-from vlfm.vlm.openai_llm import OpenAILLMClient
-from vlfm.oracle.oracle import VLMOracle
-from vlfm.brain.vlm_brain_history import VLM_History
-from vlfm.brain.llm_brain_history import LLM_History
 
 try:
     from habitat_baselines.common.tensor_dict import TensorDict
@@ -95,7 +95,9 @@ class BaseObjectNavPolicy(BasePolicy):
 
         self.VLM_ORACLE = VLMOracle(vlm_connector, LLM_CONNECTOR)  # only accessible to the llm oracle
 
-        self.vlm_agent_brain = VLM_History(vlm_connector)
+        self.vlm_agent_brain = VLM_client("e-zorzi/Qwen2.5-VL-3B-Instruct-sft-lora-choice", annotation_type="choice")
+        # self.vlm_agent_brain = VLM_client("Qwen/Qwen2.5-VL-3B-Instruct-AWQ", annotation_type="choice")
+
         self.llm_agent_brain = LLM_History(LLM_CONNECTOR)
         ###### End LLM and VLM
 
