@@ -416,9 +416,7 @@ class BaseObjectNavPolicy(BasePolicy):
             bbox_denorm = detections.boxes[idx] * np.array([width, height, width, height])
             object_mask = self._mobile_sam.segment_bbox(rgb, bbox_denorm.tolist())
 
-            """ !!!!!!! Harcoded to False for now"""
-            # if self._use_vqa:
-            if False:
+            if self._use_vqa:
                 ### we use our uncertainty estimation technique to filter out detection false positives
                 ######
                 contours, _ = cv2.findContours(object_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)

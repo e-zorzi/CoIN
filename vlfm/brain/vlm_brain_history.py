@@ -1,6 +1,15 @@
 from PIL import Image
 from colorama import Fore
 from colorama import init as init_colorama
+from LLM import VllmLLM
+from dataclasses import dataclass
+from typing import Literal
+from vlfm.utils.prompts import (
+    SINGLEMODEL_PROMPT_SCORE,
+    SINGLEMODEL_PROMPT_CHOICES,
+    SINGLEMODEL_PROMPT_ONLY_SCORE,
+    SINGLEMODEL_PROMPT_ONLY_CHOICES,
+)
 
 init_colorama(autoreset=True)
 import numpy as np
@@ -47,3 +56,58 @@ class VLM_History:
     def reset(self):
         self.ep_id = None
         self.conversation.reset()
+
+
+class VLM_client:
+    def __init__(self, client: VllmLLM, annotation_type: Literal["score", "choice"], only_annotation: bool = False):
+        self._client = client
+        self.annotation_type = annotation_type
+        self.only_annotation = only_annotation
+
+        if annotation_type == "score":
+            self.prompt = SINGLEMODEL_PROMPT_SCORE if not only_annotation else SINGLEMODEL_PROMPT_ONLY_SCORE
+            # A bit arbitrary as the score is not 'ufficialy' linked to any scale (just how likely it is that the image
+            # matches the description)
+            self.success_scores = [4, 5]
+            self.indecisive_scores = [3]
+            self.failure_scores = [1, 2]
+        elif annotation_type == "choice":
+            self.prompt = SINGLEMODEL_PROMPT_CHOICES if not only_annotation else SINGLEMODEL_PROMPT_ONLY_CHOICES
+            # Not arbitrary, the model was trained with this scale
+            self.success_scores = [2]
+            self.indecisive_scores = [1]
+            self.failure_scores = [0]
+        else:
+            raise NotImplementedError
+
+    def ask(self, image, task):
+        # Should have form <motivation>Motivation</motivation><score>Score or choice</score>
+        reasoning = self.client.image_text_chat(
+            self.prompt.format(USER_TASK=task),
+            image,
+        )
+
+        # Parse the returned reasoning
+        try:
+            splitted_reasoning = reasoning.split("<score>")
+            score = int(splitted_reasoning[1].rstrip("</score>"))
+            reasoning = splitted_reasoning[0].lstrip("<motivation>").rstrip("</motivation>")
+        except:  # noqa
+            # The format was wrong
+            reasoning = "!! <|BAD REASONING|> !!"
+            score = self.indecisive_score
+        print(
+            Fore.LIGHTMAGENTA_EX
+            + "[INFO: On-board VLM] "
+            + reasoning
+            + ", Score: ["
+            + Fore.GREEN
+            + score
+            + Fore.WHITE
+            + "]"
+        )
+
+        return (reasoning, score)
+
+    def reset(self):
+        pass

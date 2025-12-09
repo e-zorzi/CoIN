@@ -15,7 +15,7 @@ from colorama import init as init_colorama
 
 init_colorama(autoreset=True)
 from vlfm.brain.llm_brain_history import LLM_History
-from vlfm.brain.vlm_brain_history import VLM_History, VLM_client
+from vlfm.brain.vlm_brain_history import VLM_History
 from vlfm.oracle.oracle import VLMOracle
 
 
@@ -26,7 +26,7 @@ class ObjectPointCloudMap:
     def __init__(
         self,
         erosion_size: float,
-        vlm_agent_brain: VLM_client,
+        vlm_agent_brain,
         llm_agent_brain: LLM_History,
         vlm_oracle: VLMOracle,
     ) -> None:
@@ -36,9 +36,11 @@ class ObjectPointCloudMap:
         self.object_unique_id = 1
         self.detection_cloud = {}  # same logic as clouds, for understand if a detection is seen or not
 
-        self.vlm_agent_brain: VLM_client = vlm_agent_brain
+        self.vlm_agent_brain: VLM_History = vlm_agent_brain
         self.llm_agent_brain: LLM_History = llm_agent_brain
         self.vlm_oracle: VLMOracle = vlm_oracle
+
+
 
     def reset(self, ep_id, target_obj) -> None:
         self.clouds = {}
@@ -51,6 +53,7 @@ class ObjectPointCloudMap:
         return target_class in self.clouds and len(self.clouds[target_class]) > 0
 
     def mask_target_image(self, target_image: np.ndarray, target_object_mask: np.ndarray) -> np.ndarray:
+
         blurred_img = cv2.GaussianBlur(target_image, (21, 21), sigmaX=40)
 
         mask = np.copy(target_object_mask)
@@ -87,7 +90,7 @@ class ObjectPointCloudMap:
         llama_promt,
         llava_prompt,
         rgb_image,
-        target_object_description,
+        target_object,
         total_num_steps: int,
         ep_id: int,
     ) -> None:
@@ -154,87 +157,140 @@ class ObjectPointCloudMap:
         else:
             self.detection_cloud[object_name] = global_cloud
 
-        ####### Single model
-        ALLOW_QUESTIONS = False  # TODO
+        ####### LMM and VLM LOGIC - as described in the paper
+        # 1. Self-questioner
+        # 1.1 Generate init description of the image with VLM
+        # 1.2 Retrieve more facts about the detected object
+        # 1.3 Perception uncertainty estimation
+        # 1.4 Detection description refinement.
+
+        # 2. Interaction trigger
+        #####
 
         ## hyperparams
-        MAX_HUMAN_QUESTION_FOR_EACH_DETECTED_OBJ = 3
-        ASK_QUESTION_VALUES = self.vlm_agent_brain.indecisive_scores
-        SUCCESS_VALUES = self.vlm_agent_brain.success_scores
-        FAILURE_VALUES = self.vlm_agent_brain.failure_scores
+        ALLOWS_SKIP_QUESTION_MODULE = True  # allows to skip question if the similarity score is below a certain threshold, thus reducing the overall amount of question to the human
+        MAX_HUMAN_QUESTION_FOR_EACH_DETECTED_OBJ = 4
+        THRESHOLD_STOP_SCORE = 7
+        THRESHOLD_SKIP_QUESTION = 5
+        TAU = 0.75  # see paper for more information
 
         ##### Self-questioner
         #######
         # generate a description of the current observation the on-board VLM
-        reasoning, score = self.vlm_agent_brain.ask(rgb_image, target_object_description)
+        distractor_description = self.vlm_agent_brain.get_description_of_the_image(rgb_image, prompt=llava_prompt)
+
+        # retrieve more questions to self-ask regarding the detected object using LLM. These questions are open-ended
+        questions_for_detected_object_by_retrieving_more_fact = (
+            self.llm_agent_brain.retrieving_more_facts_about_detected_object(distractor_description, target_object)
+        )
+
+        # answer the questions using the on-board VLM
+        questions_and_answers_for_detected_object_by_retrieving_more_fact = self.vlm_oracle.answer_question_given_image(
+            questions_for_detected_object_by_retrieving_more_fact,
+            ARE_QUESTIONS_FOR_THE_ORACLE=False,  # we use the on-board VLM, not the VLM-simulated user
+            USE_LLM_TO_CHECK_THE_ANSWER=False,  # deprecated
+            image_to_be_used=rgb_image,  # we use the current detection
+            perform_logits_likelihood=False,  # we don't want to get the prob. distrubtion over the vocabulary now. These questions are open-ended
+        )
+
+        # update the distractor description with the updated questions/answers pairs
+        for item in questions_and_answers_for_detected_object_by_retrieving_more_fact:
+            question, answer = item["question"], item["answer"]
+            distractor_description += answer
+
+        # now we want to retrieve self-questions to check the uncertainty of the distractor description. The questions will end with 'Answer with Yes, No, or I don't know'
+        self_questioner_questions = self.llm_agent_brain.generate_self_questioner_question_given_distractor_description(
+            distractor_description, target_object
+        )
+
+        # retrieve the answers uncertainty using the on-board VLM
+        self_questioner_answers = self.vlm_oracle.answer_question_given_image(
+            self_questioner_questions,
+            ARE_QUESTIONS_FOR_THE_ORACLE=False,
+            USE_LLM_TO_CHECK_THE_ANSWER=False,
+            image_to_be_used=rgb_image,
+            perform_logits_likelihood=True,  # note here the param is set to True, we want to get the prob. distrubtion over the vocabulary
+        )
+
+        # filter the questions based on the uncertainty of the answers
+        # if uncertain, we do not discard here the question, but we put a label of uncertainty
+        self_questioner_answers = self.llm_agent_brain.filter_self_questioner_answer_by_uncertainty(
+            self_questioner_answers, tau=TAU
+        )
+
+        # refine the description using the self-questioner question/answer/uncertainty pairs
+        distractor_description, detected_image_attributes = (
+            self.llm_agent_brain.refine_image_description_after_self_questioner(
+                self_questioner_question_answers_uncertainty=self_questioner_answers,
+                target_object=target_object,
+                distractor_object_description=distractor_description,
+            )
+        )
 
         ##### Interaction Trigger
         #######
-        if ALLOW_QUESTIONS:
-            for max_human_interaction_step in range(MAX_HUMAN_QUESTION_FOR_EACH_DETECTED_OBJ):
-                break
-                # TODO
+        for max_human_interaction_step in range(MAX_HUMAN_QUESTION_FOR_EACH_DETECTED_OBJ):
 
-                # get a similarity score between the target object and the detected object, and a candidate question to the user
-                # at first iteration (when the facts are empty, the similarity score will be -1)
-                similarity_score_detected_to_target = score
-
-                if int(similarity_score_detected_to_target) != -1:
-                    information_to_be_saved = dict(
-                        object_stop_score=int(similarity_score_detected_to_target),
-                        object_map_position=global_cloud,
-                        rgb_image=rgb_image,
-                        rgb_image_description=distractor_description,
-                    )
-                    self.llm_agent_brain.store_information_about_detected_object(
-                        f"{target_object_description}_{self.object_unique_id}", information_to_be_saved, PRINT_INFO=True
-                    )
-                    self.object_unique_id += 1
-
-                    # test if this is the target object the user is looking for.
-                    if int(similarity_score_detected_to_target) >= THRESHOLD_STOP_SCORE:
-                        print(Fore.GREEN + "The detected object is similar to the target object")
-
-                        break  # we exit the loop, thus add obj to point cloud ecc...
-
-                # we have a question for the VLM-simulated user, we ask it
-                oracle_answers_target_image = self.vlm_oracle.answer_question_given_image(
-                    questions_for_target_object,
-                    ARE_QUESTIONS_FOR_THE_ORACLE=True,  # here we use the VLM-simulated user, not the on-board VLM
-                    USE_LLM_TO_CHECK_THE_ANSWER=False,
-                    image_to_be_used=None,  # we do not use the image here, but the instance image (oracle)
-                    ep_id=ep_id,
+            # get a similarity score between the target object and the detected object, and a candidate question to the user
+            # at first iteration (when the facts are empty, the similarity score will be -1)
+            similarity_score_detected_to_target, questions_for_target_object = (
+                self.llm_agent_brain.get_similarity_score_and_question_for_target_object(
+                    target_object=target_object, detected_object_description=distractor_description
                 )
+            )
 
-                # we asked a question regarding the target object, we retrieved an answer. We thus update the facts about the target object
-                self.llm_agent_brain.updates_known_facts_about_target_object_given_oracle_answers(
-                    target_object=target_object_description, oracle_questions_answers=oracle_answers_target_image
+            if (
+                ALLOWS_SKIP_QUESTION_MODULE
+                and int(similarity_score_detected_to_target) < THRESHOLD_SKIP_QUESTION
+                and int(similarity_score_detected_to_target) != -1
+            ):
+                print(Fore.RED + "[INFO: Agent] The detected object is too different from the target object, SKIP QUESTION and continue navigation...")
+                return False
+
+            if int(similarity_score_detected_to_target) != -1:
+
+                information_to_be_saved = dict(
+                    object_stop_score=int(similarity_score_detected_to_target),
+                    object_map_position=global_cloud,
+                    rgb_image=rgb_image,
+                    rgb_image_description=distractor_description,
                 )
+                self.llm_agent_brain.store_information_about_detected_object(
+                    f"{target_object}_{self.object_unique_id}", information_to_be_saved, PRINT_INFO=True
+                )
+                self.object_unique_id += 1
 
-            else:
-                print(Fore.YELLOW + "[INFO] Reached the max number of questions, moving on...")
-                return False  # we have reached the max number of questions, we move on
-        else:  # TODO change
-            if score in ASK_QUESTION_VALUES:
-                # As a fallback just consider it a failure
-                score = FAILURE_VALUES[0]
+                # test if this is the target object the user is looking for.
+                if int(similarity_score_detected_to_target) >= THRESHOLD_STOP_SCORE:
+                    print(Fore.GREEN + "The detected object is similar to the target object")
+
+                    break  # we exit the loop, thus add obj to point cloud ecc...
+
+            # we have a question for the VLM-simulated user, we ask it
+            oracle_answers_target_image = self.vlm_oracle.answer_question_given_image(
+                questions_for_target_object,
+                ARE_QUESTIONS_FOR_THE_ORACLE=True,  # here we use the VLM-simulated user, not the on-board VLM
+                USE_LLM_TO_CHECK_THE_ANSWER=False,
+                image_to_be_used=None,  # we do not use the image here, but the instance image (oracle)
+                ep_id=ep_id,
+            )
+
+            # we asked a question regarding the target object, we retrieved an answer. We thus update the facts about the target object
+            self.llm_agent_brain.updates_known_facts_about_target_object_given_oracle_answers(
+                target_object=target_object, oracle_questions_answers=oracle_answers_target_image
+            )
+
+        else:
+            print(Fore.YELLOW + "[INFO] Reached the max number of questions, moving on...")
+            return False  # we have reached the max number of questions, we move on
 
         # if we are here, the candidate object seems similar to the target object, we add it to the point cloud map as a goal to reach
-        if score in SUCCESS_VALUES:
-            print(Fore.GREEN + "Found a possible match.")
-            if object_name in self.clouds:
-                self.clouds[object_name] = np.concatenate((self.clouds[object_name], global_cloud), axis=0)
-            else:
-                self.clouds[object_name] = global_cloud
-            return True
-        elif score in FAILURE_VALUES:
-            print(
-                Fore.RED
-                + "[INFO: Agent] The detected object is too different from the target object, SKIP QUESTION and continue navigation..."
-            )
-            return False
+        print(Fore.GREEN + "Found a possible match, inserting the target into the map")
+        if object_name in self.clouds:
+            self.clouds[object_name] = np.concatenate((self.clouds[object_name], global_cloud), axis=0)
         else:
-            raise NotImplementedError
+            self.clouds[object_name] = global_cloud
+        return True
 
     def is_detection_seen(self, new_detection, target_class, potential_target=False):
         """
