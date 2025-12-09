@@ -36,13 +36,16 @@ class OpenAILLMClient:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
+                    {   "role": "assistant",
+                        "content": "You are an useful and helpful assistant. You are also concise. Use at most 300 words per answer."
+                    },
                     {
                         "role": "user",
                         "content": prompt,
                     }
                 ],
                 top_p=1,
-                max_tokens=3000,
+                max_tokens=1500, #3000,
                 seed=42,
             )
             return completion.choices[0].message.content
@@ -63,8 +66,8 @@ if __name__ == "__main__":
 
     if test_with_groq:
         llm_client_params = {
-            "model": "llama-3.3-70b-versatile",
-            "base_url": "https://api.groq.com/openai/v1",
+            "model": "qwen-3-235b-a22b-instruct-2507", # "gpt-oss-120b", # "llama-3.3-70b-versatile",
+            "base_url": "https://api.cerebras.ai/v1",
         }
     else:
         llm_client_params = {
