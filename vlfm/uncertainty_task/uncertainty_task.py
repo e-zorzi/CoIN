@@ -129,6 +129,9 @@ class LanguageUncertaintyDatasetV1(PointNavDatasetV1):
         self.goals = deserialized["goals"]
 
         for episode in deserialized["episodes"]:
+            assert os.path.exists("data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json"), "Bad configuration file path. \
+                  Make sure to have the file 'hm3d_annotated_basis.scene_dataset_config.json' inside the folder 'data/scene_datasets/hm3d/'" 
+            episode["scene_dataset_config"] = "data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json"
             episode = LanguageUncertaintyNavEpisode(**episode)
             assert len(self.goals_by_instance[episode.goals_key]) == 1, f"More than one goal for {episode.goals_key}"
 
