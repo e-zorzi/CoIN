@@ -83,30 +83,31 @@ class VLM_client:
             raise NotImplementedError
 
     def ask(self, image, task):
-        # Should have form <motivation>Motivation</motivation><score>Score or choice</score>
-        reasoning = self.client.image_text_chat(
-            self.prompt.format(USER_TASK=task),
-            image,
-        )
-
+        
         # Parse the returned reasoning
         try:
+            # Should have form <motivation>Motivation</motivation><score>Score or choice</score>
+            reasoning = self._client.image_text_chat(
+                self.prompt.format(USER_TASK=task),
+                image,
+            )
+
             splitted_reasoning = reasoning.split("<score>")
             score = int(splitted_reasoning[1].rstrip("</score>"))
             reasoning = splitted_reasoning[0].lstrip("<motivation>").rstrip("</motivation>")
-        except:  # noqa
+        except Exception as e:  # noqa
             # The format was wrong
-            reasoning = "!! <|BAD REASONING|> !!"
-            score = self.indecisive_score
+            print("[ERROR] " + str(e))
+            reasoning = "<|BAD REASONING|>"
+            score = self.indecisive_scores[0]
         print(
             Fore.LIGHTMAGENTA_EX
             + "[INFO: On-board VLM] "
             + reasoning
-            + ", Score: ["
-            + Fore.GREEN
-            + score
-            + Fore.WHITE
+            + "\nScore: ["
+            + str(score)
             + "]"
+            + Fore.WHITE
         )
 
         return (reasoning, score)

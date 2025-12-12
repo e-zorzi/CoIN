@@ -309,3 +309,5 @@ SINGLEMODEL_PROMPT_ASK_FOR_PROPERTIES = "Currently, you are facing a scene repre
 Answer these three questions: \
     1. What color is the {OBJCLASS} that you are seeing? 2. What shape/dimensions does it have? 3. What other objects are near? \
     Return an asnwer formatted like this <color>color answer</color>\n<shape>shape and dimension answer</shape>\n<objects>objects answer</objects>\n"
+
+SINGLE_MODEL_GOTO_PROMPT = "Go to the {OBJECT_DESC}"

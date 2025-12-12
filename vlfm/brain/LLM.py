@@ -7,7 +7,9 @@ from io import BytesIO
 import openai
 from attrs import define, field
 from typing import Optional
-
+import numpy as np
+from PIL import Image
+from vlfm.utils.prompts import SINGLE_MODEL_GOTO_PROMPT
 
 # Doesn't really matter here
 _SAFEGUARD_N_TOKENS = 200_000_000
@@ -53,6 +55,20 @@ class OpenAILLM(IRemoteLLM):
             self._client = openai.OpenAI(api_key=self.api_key, base_url=self._url)
 
     def image_text_chat(self, prompt, image):
+        # Handle arrays
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
+            image_format = "png"
+        else:
+            image_format = image.format
+
+        if image_format is None or image_format == "None":
+            raise ValueError("Wrong image format. I got 'None'. Check how you constructed the image.")
+        
+        # Handle prompts stylistic choices
+        if not prompt.lower().startswith("go to") and not prompt.lower().startswith("navigate to") and not prompt.lower().startswith("go towards") and not prompt.lower().startswith("navigate towards"):
+            prompt = SINGLE_MODEL_GOTO_PROMPT.format(OBJECT_DESC=prompt.lower())
+
         # Safety checks
         height, width = image.size
         if height > _SAFEGUARD_IMAGE_RESOLUTION or width > _SAFEGUARD_IMAGE_RESOLUTION:
@@ -63,11 +79,7 @@ class OpenAILLM(IRemoteLLM):
             print(
                 f"!! Warning !! The passed prompt has length {len(prompt)}, greater than the maximum allowed: {_SAFEGUARD_N_LETTERS}. It will be truncated accordingly."
             )
-
-        image_format = image.format
-        if image_format is None or image_format == "None":
-            raise ValueError("Wrong image format. I got 'None'. Check how you constructed the image.")
-
+        
         image_bytes = encode_image_b64(image, image_format)
         completion = self._client.chat.completions.create(
             model=self.model_id,
