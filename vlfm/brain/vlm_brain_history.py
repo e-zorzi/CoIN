@@ -83,7 +83,12 @@ class VLM_client:
             raise NotImplementedError
 
     def ask(self, image, task):
-        
+        # As a sanity check, check whether the passed task is always the same
+        # for each episode (in reset() it is set to None)
+        if self._initial_task is None:
+            self._initial_task = task
+        else:
+            assert task == self._initial_task
         # Parse the returned reasoning
         try:
             # Should have form <motivation>Motivation</motivation><score>Score or choice</score>
@@ -100,17 +105,9 @@ class VLM_client:
             print("[ERROR] " + str(e))
             reasoning = "<|BAD REASONING|>"
             score = self.indecisive_scores[0]
-        print(
-            Fore.LIGHTMAGENTA_EX
-            + "[INFO: On-board VLM] "
-            + reasoning
-            + "\nScore: ["
-            + str(score)
-            + "]"
-            + Fore.WHITE
-        )
+        print(Fore.LIGHTMAGENTA_EX + "[INFO: On-board VLM] " + reasoning + "\nScore: [" + str(score) + "]" + Fore.WHITE)
 
         return (reasoning, score)
 
     def reset(self):
-        pass
+        self._initial_task = None

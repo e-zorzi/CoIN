@@ -166,7 +166,8 @@ class ObjectPointCloudMap:
         ##### Self-questioner
         #######
         # generate a description of the current observation the on-board VLM
-        reasoning, score = self.vlm_agent_brain.ask(rgb_image, target_object_description)
+        reasoning, score = self.vlm_agent_brain.ask(rgb_image, self.vlm_oracle.instance_image_description)
+        
 
         ##### Interaction Trigger
         #######
